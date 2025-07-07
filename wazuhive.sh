@@ -1,12 +1,15 @@
 #!/bin/bash
-
 # Script Name: WazuHive.sh
 # Description: A semi-automated Wazuh agent installer with interactive menu,
 #              support for detection/prevention modes, system hardening,
-#              crypto mining, Mimikatz, and high-port detection.
+#              crypto mining, Mimikatz, high-port detection, Tor detection,
+#              and hidden process monitoring.
 # Author: Cillia🐝
+# Date: 2025-04-05
 
-echo -e "\n"
+# ASCII Art - WazuHive Logo 🐝
+echo -e "
+"
 cat << "BEE"
               \     /
           \    o ^ o    /
@@ -27,11 +30,10 @@ cat << "BEE"
   \ \ \_/ \_\ \/\ \L\.\_\/_/  /_\ \ \_\ \\ \ \ \ \ \ \ \ \_/ |/\  __/ 
    \ `\___x___/\ \__/.\_\ /\____\\ \____/ \ \_\ \_\ \_\ \___/ \ \____\
     '\/__//__/  \/__/\/_/ \/____/ \/___/   \/_/\/_/\/_/\/__/   \/____/
-                                                                      
-                                                                      
-
 BEE
-echo -e "\n🐝 Welcome to WazuHive - Wazuh Agent Installer for Linux\n"
+echo -e "
+🐝 Welcome to WazuHive - Wazuh Agent Installer for Linux
+"
 
 # Colors
 GREEN='\e[32m'
@@ -260,16 +262,72 @@ EOF
   systemctl restart wazuh-agent
 }
 
+setup_hidden_process_detection() {
+  log "Setting up hidden process detection..."
+
+  # Create detection script
+  cat > /usr/local/bin/check-hidden-processes.sh << 'EOF'
+#!/bin/bash
+
+LOGFILE="/var/log/hidden_processes.log"
+
+log_event() {
+  echo "$(date '+%Y-%m-%d %T') $1" >> "$LOGFILE"
+}
+
+touch "$LOGFILE"
+
+# Scan /proc for hidden processes
+for pid in /proc/[0-9]*; do
+  pid=$(basename "$pid")
+  if [ ! -r "/proc/$pid/exe" ]; then
+    desc="Hidden process detected with PID: $pid"
+    log_event "$desc"
+    echo "1|$0|$desc"  # Send to Wazuh FIFO
+  fi
+done
+EOF
+
+  chmod +x /usr/local/bin/check-hidden-processes.sh
+
+  # Configure Wazuh to read logs
+  cat > /var/ossec/etc/shared/hidden-process.conf << EOF
+<localfile>
+  <log_format>syslog</log_format>
+  <location>/var/log/hidden_processes.log</location>
+</localfile>
+EOF
+
+  ln -s /var/ossec/etc/shared/hidden-process.conf /var/ossec/etc/ossec.conf.d/
+
+  # Add custom rule
+  cat >> /var/ossec/etc/rules/local_rules.xml << EOF
+<group name="hidden_process,">
+  <rule id="100012" level="10">
+    <match>Hidden process detected</match>
+    <description>Possible hidden process/rootkit detected.</description>
+    <group>malware,</group>
+  </rule>
+</group>
+EOF
+
+  # Create cron job
+  (crontab -l 2>/dev/null; echo "* * * * * root /usr/local/bin/check-hidden-processes.sh") | crontab -
+
+  systemctl restart wazuh-agent
+}
+
 full_setup() {
   install_wazuh_agent
   configure_wazuh_agent
-  enable_crypto_mining_detection
-  enable_brute_force_protection
   enable_system_hardening_checks
+  enable_brute_force_protection
   enable_high_port_detection
   enable_first_time_port_usage
+  enable_crypto_mining_detection
   enable_torrent_detection
   setup_auditd
+  setup_hidden_process_detection
 }
 
 main_menu() {
@@ -291,8 +349,9 @@ main_menu() {
   echo "7. Crypto Mining Detection"
   echo "8. Torrent Network Detection"
   echo "9. Mimikatz / Credential Dumping Detection"
-  echo "10. Run All Tasks"
-  echo "11. Exit"
+  echo "10. Detect Hidden Processes via /proc"
+  echo "11. Run All Tasks"
+  echo "12. Exit"
   echo ""
 }
 
@@ -306,6 +365,7 @@ run_selected_tasks() {
   if confirm "Enable Crypto Mining Detection?"; then enable_crypto_mining_detection; fi
   if confirm "Enable Torrent Detection?"; then enable_torrent_detection; fi
   if confirm "Setup Audit Rules for Mimikatz Detection?"; then setup_auditd; fi
+  if confirm "Detect Hidden Processes via /proc?"; then setup_hidden_process_detection; fi
 }
 
 main() {
@@ -331,7 +391,7 @@ main() {
 
   while true; do
     main_menu
-    read -p "Choose an option [1-11]: " choice
+    read -p "Choose an option [1-12]: " choice
     case $choice in
       1) install_wazuh_agent ;;
       2) configure_wazuh_agent ;;
@@ -342,8 +402,9 @@ main() {
       7) enable_crypto_mining_detection ;;
       8) enable_torrent_detection ;;
       9) setup_auditd ;;
-      10) full_setup ;;
-      11) echo -e "\n🐝 Goodbye from WazuHive!\n"; exit 0 ;;
+      10) setup_hidden_process_detection ;;
+      11) full_setup ;;
+      12) echo -e "\n🐝 Goodbye from WazuHive!\n"; exit 0 ;;
       *) warn "Invalid option. Try again." ;;
     esac
     pause
