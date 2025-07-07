@@ -8,6 +8,9 @@
 # Date: 2025-04-05
 
 # ASCII Art - WazuHive Logo 🐝
+
+clear
+
 echo -e "
 "
 cat << "BEE"
@@ -34,6 +37,7 @@ BEE
 echo -e "
 🐝 Welcome to WazuHive - Wazuh Agent Installer for Linux
 "
+sleep 5
 
 # Colors
 GREEN='\e[32m'
