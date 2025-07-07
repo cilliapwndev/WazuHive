@@ -1,79 +1,137 @@
+# 🐝 WazuHive – Wazuh Agent Installer 
 
-# 🐝 WazuHive
+> A semi-automated, interactive installer for setting up and securing a **Wazuh agent** on Linux, Windows, And Mac systems with advanced detection capabilities.
 
-**WazuHive.sh** is a semi-automated, interactive Bash script designed to deploy and configure the [Wazuh agent](https://wazuh.com/) on Linux systems. It goes beyond installation by offering additional hardening, detection, and prevention features for enhanced endpoint visibility and security.
+## 🔒 Features
 
-> ✨ Future updates will bring support for **Windows** and **macOS** agents, with even more security features and customization options.
+WazuHive helps automate the deployment of the **Wazuh agent** with enhanced security monitoring features:
 
----
-
-## 🧠 What is WazuHive?
-
-WazuHive is more than just an installer. It’s a toolkit that transforms your machine into a monitored and hardened endpoint under the Wazuh SIEM. Built with blue teamers in mind, WazuHive assists in detecting:
-
-* Brute-force attempts (SSH/FTP)
-* Mimikatz-style memory access
-* Crypto mining binaries and file locations
-* High/odd port usage
-* Torrent client behavior
-* Weak SSH configurations
+| Feature | Description |
+|--------|-------------|
+| 🛡️ Detection / Prevention Mode | Choose between alert-only or automatic blocking |
+| 🚪 High Port (>10000) Detection | Detect unusual service ports |
+| 🧱 System Hardening Checks | Alerts on weak SSH settings |
+| 🦠 Crypto Miner Detection | Monitors common miner paths and names |
+| 🌐 Tor Network Detection | Watches for use of known Tor ports |
+| 🐛 Mimikatz / Credential Dumping | Uses auditd to detect credential dumping |
+| 🧟 Suspicious Process Detection | Detects suspicious process execution |
 
 ---
 
-## 🔐 Features
+## 🐝 What is WazuHive?
 
-| Feature                            | Description                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| 📦 Wazuh Agent Installation        | Installs the Wazuh agent via APT or YUM.                                    |
-| 🔧 Agent Configuration             | Set agent name and Wazuh Manager IP.                                        |
-| 🛡️ System Hardening Detection     | Detects weak SSH settings like root login or password authentication.       |
-| 🚫 Brute Force Protection          | Detects SSH and FTP login failures and supports active response.            |
-| 📡 High Port Monitoring            | Flags traffic to ports above 10000.                                         |
-| 🧭 First-Time Port Usage Detection | Notifies when a new destination port is seen for the first time.            |
-| ⛏️ Crypto Mining Detection         | Flags binaries like `xmrig`, `minerd`, etc. and scans typical hiding paths. |
-| 🌊 Torrent Detection               | Alerts on known torrent clients via log matching.                           |
-| 🧠 Mimikatz-Like Behavior Alerts   | Uses `auditd` to monitor credential memory access.                          |
+**WazuHive** is a **modular, menu-driven script** that helps system admins and security teams quickly deploy Wazuh agents with hardened configurations and active threat detection rules.
+
+It supports:
+- Debian/Ubuntu
+- CentOS/RHEL
 
 ---
 
-## 📦 Installation
+## 📋 Requirements
 
+- Root access or `sudo` privileges
+- Internet connectivity to install Wazuh agent and dependencies
+- Wazuh Manager IP address
+
+---
+
+## 🚀 Installation
+
+1. Clone the repo:
 ```bash
-chmod +x WazuHive.sh
-sudo ./WazuHive.sh
+git clone https://github.com/cilliapwndev/WazuHive.git
+cd WazuHive
 ```
 
-You will be prompted to enter:
+2. Make the script executable:
+```bash
+chmod +x wazuhive.sh
+```
 
-* Agent name
-* Wazuh manager IP
-* Mode: Detection or Detection + Prevention
-
-Then select features individually or run all.
-
----
-
-## 📌 Prerequisites
-
-* Root privileges
-* Linux (Debian/Ubuntu/CentOS/Fedora/Red Hat)
-* Internet access for repository and package downloads
+3. Run it:
+```bash
+sudo ./wazuhive.sh
+```
 
 ---
 
-## 🛠️ Planned Features
+## 🧩 Interactive Menu Options
 
-* ✅ Cross-platform support (Windows & macOS)
-* ✅ Interactive CLI improvements
-* ✅ Log forwarding to ELK stack
-* ✅ Hardened default configurations
-* ✅ Scheduled hardening scans
-* ✅ Auto-enrollment with manager
+The script provides an easy-to-use interactive menu where you can enable/disable modules:
+
+| Option | Feature |
+|--------|---------|
+| 1 | Install Wazuh Agent |
+| 2 | Configure Manager IP & Agent Name |
+| 3 | System Hardening Checks |
+| 4 | Brute Force Protection (SSH/FTP) |
+| 5 | High Port (>10000) Detection |
+| 6 | First-Time Port Usage Detection |
+| 7 | Crypto Mining Detection |
+| 8 | Torrent Network Detection |
+| 9 | Mimikatz / Credential Dumping Detection |
+| 10 | Run All Tasks |
+| 11 | Exit |
 
 ---
 
-## ✍️ Author
+## 📊 Wazuh Dashboard Integration
 
-**Cillia 🐝**
-Focused on blue team automation and endpoint hardening.
+After running this script, monitor events in your **Wazuh dashboard** by filtering:
 
+| Rule ID | Group             | Description                             |
+|--------|-------------------|------------------------------------------|
+| 100001 | crypto_mining     | Crypto miner binary detected             |
+| 100003 | torrent           | BitTorrent client detected               |
+| 100006 | brute_force       | Multiple SSH login attempts              |
+| 100008 | high_port_usage   | Connection to port >10000                |
+| 100010 | suspicious_process| Suspicious process executed              |
+| 100011 | tor_detection     | Tor network port used                    |
+
+---
+
+## 📜 License – GPL-3.0
+
+This project is licensed under the **GNU General Public License v3.0**.
+
+### You may:
+- ✅ Use the software freely
+- ✅ Study and modify the source code
+- ✅ Redistribute copies
+- ✅ Improve the program and release your improvements to the public
+
+### You must:
+- 📄 Include the same license and copyright notice if redistributing
+- 📁 Share any modifications you make under the same license
+
+For more details, see [LICENSE](LICENSE).
+
+---
+
+## 💙 Contributing
+
+Contributions are welcome! Whether you want to improve documentation, add new features, or fix bugs — feel free to submit pull requests or open issues.
+Absolutely! Here's a short **note** you can add to your GitHub repository’s `README.md` or documentation to indicate future plans and cross-platform support:
+
+---
+
+## 🔄 Future Plans & Roadmap
+
+This current version of **WazuHive** is focused on **Linux-based systems**, but in the future, we plan to expand support to:
+
+- ✅ **Windows PowerShell / Batch scripts** for Windows endpoints  
+- ✅ **macOS shell scripts** for Apple devices  
+- ✅ **Containerized deployment** (e.g., Docker, Kubernetes)  
+
+We're also planning to add more detection and prevention features such as:
+
+- 🔍 **YARA-based memory scanning**
+- 🧠 **Threat intelligence integration (e.g., VirusTotal, AlienVault OTX)**
+- 🛡️ **System integrity checks with file hashing**
+- 🧱 **Hardening recommendations via CIS benchmarks**
+- 📢 **Alert forwarding to Slack, Discord, or Telegram**
+
+Stay tuned — **WazuHive will evolve into a full cross-platform security toolset** for Wazuh users!
+
+---
