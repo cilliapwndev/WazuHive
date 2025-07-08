@@ -90,26 +90,6 @@ detect_os() {
   fi
 }
 
-# Create local_rules.xml if it doesn't exist
-create_local_rules_file() {
-  LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
-  if [ ! -f "$LOCAL_RULES" ]; then
-    log "Creating $LOCAL_RULES..."
-    mkdir -p "$(dirname "$LOCAL_RULES")"
-    echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
-    echo '<group name="local,syslog">' >> "$LOCAL_RULES"
-    echo '</group>' >> "$LOCAL_RULES"
-  else
-    log "$LOCAL_RULES already exists."
-  fi
-}
-
-# Create ossec directories if missing
-create_ossec_dirs() {
-  mkdir -p /var/ossec/etc/ossec.conf.d/
-}
-
-# Ensure curl is installed
 ensure_curl_installed() {
   if ! command -v curl &>/dev/null; then
     log "curl is not installed. Installing curl..."
@@ -128,7 +108,22 @@ ensure_curl_installed() {
   fi
 }
 
-# Restart Wazuh only if running
+create_local_rules_file() {
+  LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
+  if [ ! -f "$LOCAL_RULES" ]; then
+    log "Creating $LOCAL_RULES..."
+    mkdir -p "$(dirname "$LOCAL_RULES")"
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
+    echo '<group name="local,syslog">' >> "$LOCAL_RULES"
+    echo '</group>' >> "$LOCAL_RULES"
+  else
+    log "$LOCAL_RULES already exists."
+    sed -i '$ d' "$LOCAL_RULES"
+    echo '</group>' >> "$LOCAL_RULES"
+    echo '<group name="wazuhive">' >> "$LOCAL_RULES"
+  fi
+}
+
 safe_restart_wazuh() {
   if systemctl is-active --quiet wazuh-agent; then
     systemctl restart wazuh-agent
@@ -137,7 +132,15 @@ safe_restart_wazuh() {
   fi
 }
 
-# Install Wazuh agent
+validate_wazuh_config() {
+  log "Validating Wazuh config..."
+  /var/ossec/bin/wazuh-control check
+  if [ $? -ne 0 ]; then
+    warn "Invalid configuration detected. Please inspect /var/ossec/etc/ossec.conf"
+    exit 1
+  fi
+}
+
 install_wazuh_agent() {
   detect_os
   ensure_curl_installed
@@ -161,8 +164,6 @@ EOF
   fi
 
   systemctl enable wazuh-agent --now
-
-  create_ossec_dirs
   create_local_rules_file
 }
 
@@ -170,24 +171,26 @@ configure_wazuh_agent() {
   log "Configuring Wazuh agent with manager IP and agent name..."
   sed -i "s:<server_ip>.*</server_ip>:<server_ip>$WAZUH_MANAGER_IP</server_ip>:" /var/ossec/etc/ossec.conf
   sed -i "s:<node_name>.*</node_name>:<node_name>$AGENT_NAME</node_name>:" /var/ossec/etc/ossec.conf
+  safe_restart_wazuh
 }
 
 enable_system_hardening_checks() {
   log "Enabling system hardening rules..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="system_hardening,">
-  <rule id="100004" level="7">
-    <if_sid>5402</if_sid>
-    <match>PermitRootLogin yes</match>
-    <description>SSH PermitRootLogin is enabled.</description>
-  </rule>
-  <rule id="100005" level="7">
-    <if_sid>5402</if_sid>
-    <match>PasswordAuthentication yes</match>
-    <description>SSH PasswordAuthentication is enabled.</description>
-  </rule>
-</group>
+<rule id="100004" level="7">
+  <if_sid>5402</if_sid>
+  <match>PermitRootLogin yes</match>
+  <description>SSH PermitRootLogin is enabled.</description>
+</rule>
+
+<rule id="100005" level="7">
+  <if_sid>5402</if_sid>
+  <match>PasswordAuthentication yes</match>
+  <description>SSH PasswordAuthentication is enabled.</description>
+</rule>
 EOF
+  echo '</group>' >> /var/ossec/etc/rules/local_rules.xml
+  echo '<group name="wazuhive">' >> /var/ossec/etc/rules/local_rules.xml
   safe_restart_wazuh
 }
 
@@ -203,51 +206,42 @@ enable_brute_force_protection() {
 EOF
 
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="brute_force,">
-  <rule id="100006" level="8">
-    <if_sid>5710,5715</if_sid>
-    <match>sshd.*Failed password for</match>
-    <description>Multiple SSH login failures detected.</description>
-  </rule>
+<rule id="100006" level="8">
+  <if_sid>5710,5715</if_sid>
+  <match>sshd.*Failed password for</match>
+  <description>Multiple SSH login failures detected.</description>
+</rule>
 
-  <rule id="100007" level="8">
-    <if_sid>5710,5725</if_sid>
-    <match>vsftpd.*Login failure</match>
-    <description>Multiple FTP login failures detected.</description>
-  </rule>
-</group>
+<rule id="100007" level="8">
+  <if_sid>5710,5725</if_sid>
+  <match>vsftpd.*Login failure</match>
+  <description>Multiple FTP login failures detected.</description>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
 enable_high_port_detection() {
   log "Setting up high port (>10000) detection..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="high_port_usage,">
-  <rule id="100008" level="7">
-    <if_sid>5400</if_sid>
-    <field name="dstport">$HIGH_PORT_REGEX</field>
-    <description>Connection attempt to high port (>10000).</description>
-  </rule>
-</group>
+<rule id="100008" level="7">
+  <if_sid>5400</if_sid>
+  <field name="dstport">$HIGH_PORT_REGEX</field>
+  <description>Connection attempt to high port (>10000).</description>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
 enable_first_time_port_usage() {
   log "Setting up first-time port usage detection..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="first_time_port,">
-  <rule id="100009" level="5">
-    <if_sid>5400</if_sid>
-    <match>new port opened</match>
-    <description>New destination port was observed for the first time.</description>
-  </rule>
-</group>
+<rule id="100009" level="5">
+  <if_sid>5400</if_sid>
+  <match>new port opened</match>
+  <description>New destination port was observed for the first time.</description>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
@@ -283,48 +277,39 @@ enable_crypto_mining_detection() {
 EOF
 
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="crypto_mining,">
-  <rule id="100001" level="10">
-    <if_sid>530</if_sid>
-    <match>minerd|xmr-stak|xmrig|cpuminer</match>
-    <description>Crypto miner binary detected.</description>
-    <group>malware,</group>
-  </rule>
-</group>
+<rule id="100001" level="10">
+  <if_sid>530</if_sid>
+  <match>minerd|xmr-stak|xmrig|cpuminer</match>
+  <description>Crypto miner binary detected.</description>
+  <group>malware,</group>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
 enable_torrent_detection() {
   log "Setting up torrent detection..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="torrent,">
-  <rule id="100003" level="7">
-    <if_sid>5400</if_sid>
-    <match>BitTorrent|bittorrent|utorrent|Transmission|Deluge|qBittorrent</match>
-    <description>Torrent client activity detected.</description>
-    <group>network,</group>
-  </rule>
-</group>
+<rule id="100003" level="7">
+  <if_sid>5400</if_sid>
+  <match>BitTorrent|bittorrent|utorrent|Transmission|Deluge|qBittorrent</match>
+  <description>Torrent client activity detected.</description>
+  <group>network,</group>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
 detect_tor_connections() {
   log "Setting up Tor network connection detection..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="tor_detection,">
-  <rule id="100011" level="7">
-    <if_sid>5400</if_sid>
-    <match>:(9001|9030|9050|9051|9070|9071|9080|9090|9150|9151)</match>
-    <description>Tor network port used (likely Tor traffic).</description>
-    <group>network,</group>
-  </rule>
-</group>
+<rule id="100011" level="7">
+  <if_sid>5400</if_sid>
+  <match>:(9001|9030|9050|9051|9070|9071|9080|9090|9150|9151)</match>
+  <description>Tor network port used (likely Tor traffic).</description>
+  <group>network,</group>
+</rule>
 EOF
-
   safe_restart_wazuh
 }
 
@@ -338,6 +323,7 @@ LOGFILE="/var/log/hidden_processes.log"
 log_event() {
   echo "$(date '+%Y-%m-%d %T') $1" >> "$LOGFILE"
 }
+
 touch "$LOGFILE"
 
 for pid in /proc/[0-9]*; do
@@ -359,16 +345,15 @@ EOF
 </localfile>
 EOF
 
+  mkdir -p /var/ossec/etc/ossec.conf.d/
   ln -sf /var/ossec/etc/shared/hidden-process.conf /var/ossec/etc/ossec.conf.d/
 
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
-<group name="hidden_process,">
-  <rule id="100012" level="10">
-    <match>Hidden process detected</match>
-    <description>Possible hidden process/rootkit detected.</description>
-    <group>malware,</group>
-  </rule>
-</group>
+<rule id="100012" level="10">
+  <match>Hidden process detected</match>
+  <description>Possible hidden process/rootkit detected.</description>
+  <group>malware,</group>
+</rule>
 EOF
 
   (crontab -l 2>/dev/null; echo "* * * * * root /usr/local/bin/check-hidden-processes.sh") | crontab -
