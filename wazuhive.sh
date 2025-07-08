@@ -32,11 +32,12 @@ cat << "BEE"
   \ \ \_/ \_\ \/\ \L\.\_\/_/  /_\ \ \_\ \\ \ \ \ \ \ \ \ \_/ |/\  __/ 
    \ `\___x___/\ \__/.\_\ /\____\\ \____/ \ \_\ \_\ \_\ \___/ \ \____\
     '\/__//__/  \/__/\/_/ \/____/ \/___/   \/_/\/_/\/_/\/__/   \/____/
+                                                                      
+
 BEE
 echo -e "
 🐝 Welcome to WazuHive - Wazuh Agent Installer for Linux
 "
-
 sleep 2
 
 # Colors
@@ -88,9 +89,30 @@ detect_os() {
   fi
 }
 
+# Ensure curl is installed
+ensure_curl_installed() {
+  if ! command -v curl &>/dev/null; then
+    log "curl is not installed. Installing curl..."
+    if [ "$PKG_MGR" = "apt" ]; then
+      apt update -qq && apt install -y curl
+    else
+      yum install -y curl
+    fi
+    if ! command -v curl &>/dev/null; then
+      warn "Failed to install curl. Exiting."
+      exit 1
+    fi
+    log "curl installed successfully."
+  else
+    log "curl is already installed."
+  fi
+}
+
 # Create local_rules.xml if it doesn't exist
 create_local_rules_file() {
   LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
+  mkdir -p "$(dirname "$LOCAL_RULES")"
+
   if [ ! -f "$LOCAL_RULES" ]; then
     log "Creating $LOCAL_RULES..."
     echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
@@ -101,10 +123,18 @@ create_local_rules_file() {
   fi
 }
 
+# Create ossec directories if missing
+create_ossec_dirs() {
+  mkdir -p /var/ossec/etc/ossec.conf.d/
+}
+
+# Install Wazuh agent
 install_wazuh_agent() {
+  detect_os
   log "Installing Wazuh agent..."
 
   if [ "$PKG_MGR" = "apt" ]; then
+    ensure_curl_installed
     curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH  | apt-key add -
     echo "deb https://packages.wazuh.com/4.x/apt/  stable main" > /etc/apt/sources.list.d/wazuh.list
     apt update -qq && apt install -y wazuh-agent
@@ -122,19 +152,27 @@ EOF
   fi
 
   systemctl enable wazuh-agent --now
+
+  create_ossec_dirs
   create_local_rules_file
 }
 
 configure_wazuh_agent() {
   log "Configuring Wazuh agent with manager IP and agent name..."
-
   sed -i "s:<server_ip>.*</server_ip>:<server_ip>$WAZUH_MANAGER_IP</server_ip>:" /var/ossec/etc/ossec.conf
   sed -i "s:<node_name>.*</node_name>:<node_name>$AGENT_NAME</node_name>:" /var/ossec/etc/ossec.conf
 }
 
+safe_restart_wazuh() {
+  if systemctl is-active --quiet wazuh-agent; then
+    systemctl restart wazuh-agent
+  else
+    warn "Wazuh agent is not running. Skipping restart."
+  fi
+}
+
 enable_system_hardening_checks() {
   log "Enabling system hardening rules..."
-
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="system_hardening,">
   <rule id="100004" level="7">
@@ -150,8 +188,7 @@ enable_system_hardening_checks() {
   </rule>
 </group>
 EOF
-
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 enable_brute_force_protection() {
@@ -182,12 +219,11 @@ EOF
 </group>
 EOF
 
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 enable_high_port_detection() {
   log "Setting up high port (>10000) detection..."
-
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="high_port_usage,">
   <rule id="100008" level="7">
@@ -197,13 +233,11 @@ enable_high_port_detection() {
   </rule>
 </group>
 EOF
-
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 enable_first_time_port_usage() {
   log "Setting up first-time port usage detection..."
-
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="first_time_port,">
   <rule id="100009" level="5">
@@ -213,8 +247,7 @@ enable_first_time_port_usage() {
   </rule>
 </group>
 EOF
-
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 setup_auditd() {
@@ -242,7 +275,6 @@ EOF
 
 enable_crypto_mining_detection() {
   log "Enabling crypto mining detection..."
-
   cat >> /var/ossec/etc/ossec.conf << EOF
 <syscheck>
   <directories check_all="yes">/tmp,/dev/shm,/home/*/.ssh,/home/*/.minerd</directories>
@@ -260,12 +292,11 @@ EOF
 </group>
 EOF
 
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 enable_torrent_detection() {
   log "Setting up torrent detection..."
-
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="torrent,">
   <rule id="100003" level="7">
@@ -277,12 +308,11 @@ enable_torrent_detection() {
 </group>
 EOF
 
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 detect_tor_connections() {
   log "Setting up Tor network connection detection..."
-
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="tor_detection,">
   <rule id="100011" level="7">
@@ -294,37 +324,31 @@ detect_tor_connections() {
 </group>
 EOF
 
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 setup_hidden_process_detection() {
   log "Setting up hidden process detection..."
 
-  # Create detection script
   cat > /usr/local/bin/check-hidden-processes.sh << 'EOF'
 #!/bin/bash
-
 LOGFILE="/var/log/hidden_processes.log"
-
 log_event() {
-  echo "$(date '+%Y-%m-%d %T') $1" >> "$LOGFILE"
+  echo "$(date '+%Y-%m-%d %T') \$1" >> "\$LOGFILE"
 }
-
-touch "$LOGFILE"
-
+touch "\$LOGFILE"
 for pid in /proc/[0-9]*; do
-  pid=$(basename "$pid")
-  if [ ! -r "/proc/$pid/exe" ]; then
-    desc="Hidden process detected with PID: $pid"
-    log_event "$desc"
-    echo "1|$0|$desc"  # Send to Wazuh FIFO
+  pid=\$(basename "\$pid")
+  if [ ! -r "/proc/\$pid/exe" ]; then
+    desc="Hidden process detected with PID: \$pid"
+    log_event "\$desc"
+    echo "1|\$0|\$desc"  # Send to Wazuh FIFO
   fi
 done
 EOF
 
   chmod +x /usr/local/bin/check-hidden-processes.sh
 
-  # Configure Wazuh to read logs
   cat > /var/ossec/etc/shared/hidden-process.conf << EOF
 <localfile>
   <log_format>syslog</log_format>
@@ -332,9 +356,8 @@ EOF
 </localfile>
 EOF
 
-  ln -s /var/ossec/etc/shared/hidden-process.conf /var/ossec/etc/ossec.conf.d/
+  ln -sf /var/ossec/etc/shared/hidden-process.conf /var/ossec/etc/ossec.conf.d/
 
-  # Add custom rule
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
 <group name="hidden_process,">
   <rule id="100012" level="10">
@@ -345,10 +368,9 @@ EOF
 </group>
 EOF
 
-  # Create cron job
   (crontab -l 2>/dev/null; echo "* * * * * root /usr/local/bin/check-hidden-processes.sh") | crontab -
 
-  systemctl restart wazuh-agent
+  safe_restart_wazuh
 }
 
 full_setup() {
@@ -408,7 +430,6 @@ run_selected_tasks() {
 main() {
   detect_os
   clear
-
   log "Welcome to WazuHive - Wazuh Agent Installer!"
   pause
 
