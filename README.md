@@ -1,10 +1,10 @@
-# 🐝 WazuHive – Wazuh Agent Installer 
+# 🐝 WazuHive – Wazuh Agent Installer
 
-> A semi-automated, interactive installer for setting up and securing a **Wazuh agent** on Linux, Windows, And Mac systems with advanced detection capabilities.
+> A semi-automated, interactive installer for setting up and securing a **Wazuh agent** on Linux systems with advanced detection capabilities.
 
 ## 🔒 Features
 
-WazuHive helps automate the deployment of the **Wazuh agent** with enhanced security monitoring features:
+WazuHive helps automate the deployment of the **Wazuh agent** with hardened configurations and active threat detection rules:
 
 | Feature | Description |
 |--------|-------------|
@@ -15,16 +15,19 @@ WazuHive helps automate the deployment of the **Wazuh agent** with enhanced secu
 | 🌐 Tor Network Detection | Watches for use of known Tor ports |
 | 🐛 Mimikatz / Credential Dumping | Uses auditd to detect credential dumping |
 | 🧟 Suspicious Process Detection | Detects suspicious process execution |
+| 🕳️ Hidden Process Detection | Scans `/proc` for hidden processes (rootkit indicators) |
 
 ---
 
 ## 🐝 What is WazuHive?
 
-**WazuHive** is a **modular, menu-driven script** that helps system admins and security teams quickly deploy Wazuh agents with hardened configurations and active threat detection rules.
+**WazuHive** is a **modular, menu-driven Bash script** that helps system admins and security teams quickly deploy Wazuh agents with hardened configurations and active threat detection rules.
 
-It supports:
-- Debian/Ubuntu
-- CentOS/RHEL
+It currently supports:
+- ✅ **Debian/Ubuntu**
+- ✅ **CentOS/RHEL**
+
+Support for **Windows PowerShell**, **macOS shell scripts**, and **containerized deployments** will be added in future versions.
 
 ---
 
@@ -71,8 +74,10 @@ The script provides an easy-to-use interactive menu where you can enable/disable
 | 7 | Crypto Mining Detection |
 | 8 | Torrent Network Detection |
 | 9 | Mimikatz / Credential Dumping Detection |
-| 10 | Run All Tasks |
-| 11 | Exit |
+| 10 | Detect Tor Network Connection |
+| 11 | Detect Hidden Processes via `/proc` |
+| 12 | Run All Tasks |
+| 13 | Exit |
 
 ---
 
@@ -88,6 +93,7 @@ After running this script, monitor events in your **Wazuh dashboard** by filteri
 | 100008 | high_port_usage   | Connection to port >10000                |
 | 100010 | suspicious_process| Suspicious process executed              |
 | 100011 | tor_detection     | Tor network port used                    |
+| 100012 | hidden_process    | Possible hidden process/rootkit detected |
 
 ---
 
@@ -112,26 +118,34 @@ For more details, see [LICENSE](LICENSE).
 ## 💙 Contributing
 
 Contributions are welcome! Whether you want to improve documentation, add new features, or fix bugs — feel free to submit pull requests or open issues.
-Absolutely! Here's a short **note** you can add to your GitHub repository’s `README.md` or documentation to indicate future plans and cross-platform support:
 
 ---
 
 ## 🔄 Future Plans & Roadmap
 
-This current version of **WazuHive** is focused on **Linux-based systems**, but in the future, we plan to expand support to:
+This current version of **WazuHive** is focused on **Linux-based systems**, but we're planning to expand support to include:
 
 - ✅ **Windows PowerShell / Batch scripts** for Windows endpoints  
 - ✅ **macOS shell scripts** for Apple devices  
-- ✅ **Containerized deployment** (e.g., Docker, Kubernetes)  
+- ✅ **Containerized deployment** (e.g., Docker, Kubernetes)
 
 We're also planning to add more detection and prevention features such as:
 
 - 🔍 **YARA-based memory scanning**
-- 🧠 **Threat intelligence integration (e.g., VirusTotal, AlienVault OTX)**
-- 🛡️ **System integrity checks with file hashing**
-- 🧱 **Hardening recommendations via CIS benchmarks**
-- 📢 **Alert forwarding to Slack, Discord, or Telegram**
+- 🧠 **Threat intelligence integration**
+- 🛡️ **System integrity checks**
+- 🧱 **Hardening recommendations**
+- 📢 **Alert forwarding to Slack/Discord/Telegram**
+- 🤖 **AI/ML anomaly detection modules**
 
 Stay tuned — **WazuHive will evolve into a full cross-platform security toolset** for Wazuh users!
+
+---
+
+## 🐝 Thank You!
+
+Thanks for using **WazuHive** – your friendly neighborhood **Wazuh agent installer**, powered by 🐝🐝🐝
+
+Let me know how far you'd like to take this project!
 
 ---
