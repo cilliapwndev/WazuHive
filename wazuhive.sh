@@ -33,6 +33,7 @@ cat << "BEE"
    \ `\___x___/\ \__/.\_\ /\____\\ \____/ \ \_\ \_\ \_\ \___/ \ \____\
     '\/__//__/  \/__/\/_/ \/____/ \/___/   \/_/\/_/\/_/\/__/   \/____/
                                                                       
+                                                                      
 
 BEE
 echo -e "
@@ -89,6 +90,25 @@ detect_os() {
   fi
 }
 
+# Create local_rules.xml if it doesn't exist
+create_local_rules_file() {
+  LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
+  if [ ! -f "$LOCAL_RULES" ]; then
+    log "Creating $LOCAL_RULES..."
+    mkdir -p "$(dirname "$LOCAL_RULES")"
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
+    echo '<group name="local,syslog">' >> "$LOCAL_RULES"
+    echo '</group>' >> "$LOCAL_RULES"
+  else
+    log "$LOCAL_RULES already exists."
+  fi
+}
+
+# Create ossec directories if missing
+create_ossec_dirs() {
+  mkdir -p /var/ossec/etc/ossec.conf.d/
+}
+
 # Ensure curl is installed
 ensure_curl_installed() {
   if ! command -v curl &>/dev/null; then
@@ -108,33 +128,22 @@ ensure_curl_installed() {
   fi
 }
 
-# Create local_rules.xml if it doesn't exist
-create_local_rules_file() {
-  LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
-  mkdir -p "$(dirname "$LOCAL_RULES")"
-
-  if [ ! -f "$LOCAL_RULES" ]; then
-    log "Creating $LOCAL_RULES..."
-    echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
-    echo '<group name="local,syslog">' >> "$LOCAL_RULES"
-    echo '</group>' >> "$LOCAL_RULES"
+# Restart Wazuh only if running
+safe_restart_wazuh() {
+  if systemctl is-active --quiet wazuh-agent; then
+    systemctl restart wazuh-agent
   else
-    log "$LOCAL_RULES already exists."
+    warn "Wazuh agent is not running. Skipping restart."
   fi
-}
-
-# Create ossec directories if missing
-create_ossec_dirs() {
-  mkdir -p /var/ossec/etc/ossec.conf.d/
 }
 
 # Install Wazuh agent
 install_wazuh_agent() {
   detect_os
+  ensure_curl_installed
   log "Installing Wazuh agent..."
 
   if [ "$PKG_MGR" = "apt" ]; then
-    ensure_curl_installed
     curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH  | apt-key add -
     echo "deb https://packages.wazuh.com/4.x/apt/  stable main" > /etc/apt/sources.list.d/wazuh.list
     apt update -qq && apt install -y wazuh-agent
@@ -163,14 +172,6 @@ configure_wazuh_agent() {
   sed -i "s:<node_name>.*</node_name>:<node_name>$AGENT_NAME</node_name>:" /var/ossec/etc/ossec.conf
 }
 
-safe_restart_wazuh() {
-  if systemctl is-active --quiet wazuh-agent; then
-    systemctl restart wazuh-agent
-  else
-    warn "Wazuh agent is not running. Skipping restart."
-  fi
-}
-
 enable_system_hardening_checks() {
   log "Enabling system hardening rules..."
   cat >> /var/ossec/etc/rules/local_rules.xml << EOF
@@ -180,7 +181,6 @@ enable_system_hardening_checks() {
     <match>PermitRootLogin yes</match>
     <description>SSH PermitRootLogin is enabled.</description>
   </rule>
-
   <rule id="100005" level="7">
     <if_sid>5402</if_sid>
     <match>PasswordAuthentication yes</match>
@@ -193,7 +193,6 @@ EOF
 
 enable_brute_force_protection() {
   log "Setting up brute force protection..."
-
   cat >> /var/ossec/etc/ossec.conf << EOF
 <active-response>
   <command>host-deny</command>
@@ -233,6 +232,7 @@ enable_high_port_detection() {
   </rule>
 </group>
 EOF
+
   safe_restart_wazuh
 }
 
@@ -247,6 +247,7 @@ enable_first_time_port_usage() {
   </rule>
 </group>
 EOF
+
   safe_restart_wazuh
 }
 
@@ -263,7 +264,7 @@ setup_auditd() {
 
   cat > /etc/audit/rules.d/99-wazuh-crypto.rules << EOF
 -a always,exit -F arch=b64 -S process_vm_readv -k mem_access
--a always,exit -F arch=b32 -S read_mem -k mem_access
+-a always,exit -F arch=b32 -S process_vm_readv -k mem_access
 -w /etc/shadow -p war -k shadow_access
 -w /tmp/minerd -k miner_detected
 -w /dev/shm/xmrig -k miner_detected
@@ -333,16 +334,18 @@ setup_hidden_process_detection() {
   cat > /usr/local/bin/check-hidden-processes.sh << 'EOF'
 #!/bin/bash
 LOGFILE="/var/log/hidden_processes.log"
+
 log_event() {
-  echo "$(date '+%Y-%m-%d %T') \$1" >> "\$LOGFILE"
+  echo "$(date '+%Y-%m-%d %T') $1" >> "$LOGFILE"
 }
-touch "\$LOGFILE"
+touch "$LOGFILE"
+
 for pid in /proc/[0-9]*; do
-  pid=\$(basename "\$pid")
-  if [ ! -r "/proc/\$pid/exe" ]; then
-    desc="Hidden process detected with PID: \$pid"
-    log_event "\$desc"
-    echo "1|\$0|\$desc"  # Send to Wazuh FIFO
+  pid=$(basename "$pid")
+  if [ ! -r "/proc/$pid/exe" ]; then
+    desc="Hidden process detected with PID: $pid"
+    log_event "$desc"
+    echo "1|$0|$desc"  # Send to Wazuh FIFO
   fi
 done
 EOF
