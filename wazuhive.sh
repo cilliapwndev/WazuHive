@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Script Name: WazuHive.sh
 # Description: A semi-automated Wazuh agent installer with interactive menu,
 #              support for detection/prevention modes, system hardening,
@@ -8,9 +9,7 @@
 # Date: 2025-04-05
 
 # ASCII Art - WazuHive Logo 🐝
-
 clear
-
 echo -e "
 "
 cat << "BEE"
@@ -37,7 +36,8 @@ BEE
 echo -e "
 🐝 Welcome to WazuHive - Wazuh Agent Installer for Linux
 "
-sleep 5
+
+sleep 2
 
 # Colors
 GREEN='\e[32m'
@@ -88,6 +88,19 @@ detect_os() {
   fi
 }
 
+# Create local_rules.xml if it doesn't exist
+create_local_rules_file() {
+  LOCAL_RULES="/var/ossec/etc/rules/local_rules.xml"
+  if [ ! -f "$LOCAL_RULES" ]; then
+    log "Creating $LOCAL_RULES..."
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > "$LOCAL_RULES"
+    echo '<group name="local,syslog">' >> "$LOCAL_RULES"
+    echo '</group>' >> "$LOCAL_RULES"
+  else
+    log "$LOCAL_RULES already exists."
+  fi
+}
+
 install_wazuh_agent() {
   log "Installing Wazuh agent..."
 
@@ -109,6 +122,7 @@ EOF
   fi
 
   systemctl enable wazuh-agent --now
+  create_local_rules_file
 }
 
 configure_wazuh_agent() {
@@ -266,6 +280,23 @@ EOF
   systemctl restart wazuh-agent
 }
 
+detect_tor_connections() {
+  log "Setting up Tor network connection detection..."
+
+  cat >> /var/ossec/etc/rules/local_rules.xml << EOF
+<group name="tor_detection,">
+  <rule id="100011" level="7">
+    <if_sid>5400</if_sid>
+    <match>:(9001|9030|9050|9051|9070|9071|9080|9090|9150|9151)</match>
+    <description>Tor network port used (likely Tor traffic).</description>
+    <group>network,</group>
+  </rule>
+</group>
+EOF
+
+  systemctl restart wazuh-agent
+}
+
 setup_hidden_process_detection() {
   log "Setting up hidden process detection..."
 
@@ -281,7 +312,6 @@ log_event() {
 
 touch "$LOGFILE"
 
-# Scan /proc for hidden processes
 for pid in /proc/[0-9]*; do
   pid=$(basename "$pid")
   if [ ! -r "/proc/$pid/exe" ]; then
@@ -331,6 +361,7 @@ full_setup() {
   enable_crypto_mining_detection
   enable_torrent_detection
   setup_auditd
+  detect_tor_connections
   setup_hidden_process_detection
 }
 
@@ -353,9 +384,10 @@ main_menu() {
   echo "7. Crypto Mining Detection"
   echo "8. Torrent Network Detection"
   echo "9. Mimikatz / Credential Dumping Detection"
-  echo "10. Detect Hidden Processes via /proc"
-  echo "11. Run All Tasks"
-  echo "12. Exit"
+  echo "10. Detect Tor Network Connection"
+  echo "11. Detect Hidden Processes via /proc"
+  echo "12. Run All Tasks"
+  echo "13. Exit"
   echo ""
 }
 
@@ -369,6 +401,7 @@ run_selected_tasks() {
   if confirm "Enable Crypto Mining Detection?"; then enable_crypto_mining_detection; fi
   if confirm "Enable Torrent Detection?"; then enable_torrent_detection; fi
   if confirm "Setup Audit Rules for Mimikatz Detection?"; then setup_auditd; fi
+  if confirm "Detect Tor Network Connection?"; then detect_tor_connections; fi
   if confirm "Detect Hidden Processes via /proc?"; then setup_hidden_process_detection; fi
 }
 
@@ -395,7 +428,7 @@ main() {
 
   while true; do
     main_menu
-    read -p "Choose an option [1-12]: " choice
+    read -p "Choose an option [1-13]: " choice
     case $choice in
       1) install_wazuh_agent ;;
       2) configure_wazuh_agent ;;
@@ -406,9 +439,10 @@ main() {
       7) enable_crypto_mining_detection ;;
       8) enable_torrent_detection ;;
       9) setup_auditd ;;
-      10) setup_hidden_process_detection ;;
-      11) full_setup ;;
-      12) echo -e "\n🐝 Goodbye from WazuHive!\n"; exit 0 ;;
+      10) detect_tor_connections ;;
+      11) setup_hidden_process_detection ;;
+      12) full_setup ;;
+      13) echo -e "\n🐝 Goodbye from WazuHive!\n"; exit 0 ;;
       *) warn "Invalid option. Try again." ;;
     esac
     pause
